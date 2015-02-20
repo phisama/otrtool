@@ -18,16 +18,15 @@
 #include <curl/easy.h>
 
 #define ERROR(...) \
-  ({fprintf(stderr, "\n"); \
+  ({fprintf(stderr, "\n%s: ", progname); \
     fprintf(stderr, __VA_ARGS__); \
     fprintf(stderr, "\n"); \
     exit(EXIT_FAILURE); })
 
 #define PERROR(...) \
-  ({fprintf(stderr, "\n"); \
+  ({fprintf(stderr, "\n%s: ", progname); \
     fprintf(stderr, __VA_ARGS__); \
-    fprintf(stderr, ": "); \
-    perror(NULL); \
+    fprintf(stderr, ": %s\n", strerror(errno)); \
     exit(EXIT_FAILURE); })
 
 #define MIN(a,b) ((a)<(b)?(a):(b))
@@ -64,6 +63,7 @@ static FILE *file = NULL;
 static FILE *keyfile = NULL;
 static char *header = NULL;
 static char *info = NULL;
+static char *progname = NULL;
 
 // ######################## curl-stuff #######################
 
@@ -968,6 +968,7 @@ void usageError() {
 
 int main(int argc, char *argv[]) {
   fputs("OTR-Tool, " VERSION "\n", stderr);
+  progname = argv[0];
   
   int opt;
   while ( (opt = getopt(argc, argv, "hvgifxyk:e:p:D:O:")) != -1) {
