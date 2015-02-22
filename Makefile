@@ -16,7 +16,8 @@ PREFIX = /usr/local
 DVERSION = v1.1.0
 VERSION := $(shell git describe --tags --long --dirty 2>/dev/null || echo "$(DVERSION)")
 
-CC = gcc
+CC ?= gcc
+RM ?= rm -f
 CFLAGS = -O3 -Wall -Wextra -g -DVERSION='"$(VERSION)"'
 LDFLAGS = -lmcrypt -lcurl
 
