@@ -3,12 +3,20 @@
 #include <string.h>
 #include <stdint.h>
 #include <unistd.h>
-#include <termios.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
 #ifdef __linux__
   #include <sys/syscall.h> /* ioprio_set */
+#endif
+
+#undef POSIX
+#if (_POSIX_VERSION >= 200112L) /* POSIX.1-2001 */
+  #define POSIX
+  // used to decide whether nice() and tcsetattr() are available
+#endif
+#ifdef POSIX
+  #include <termios.h> /* tcsetattr */
 #endif
 
 #include <time.h>
@@ -19,6 +27,7 @@
 #include <curl/curl.h>
 #include <curl/easy.h>
 
+#undef ERROR
 #define ERROR(...) \
   ({fprintf(stderr, "\n%s: ", progname); \
     fprintf(stderr, __VA_ARGS__); \
@@ -32,6 +41,8 @@
     exit(EXIT_FAILURE); })
 
 #define MIN(a,b) ((a)<(b)?(a):(b))
+#define _ITOA(x) #x
+#define ITOA(x) _ITOA(x)
 
 #ifndef VERSION
   #define VERSION "version unknown"
@@ -39,7 +50,6 @@
 
 #define LINE_LENGTH 80
 #define MAX_RESPONSE_LENGTH 1000
-#define CREAT_MODE S_IWUSR|S_IRUSR|S_IRGRP|S_IROTH
 
 static int guimode = 0; // do not output \r and stuff
 static int interactive = 1; // ask questions instead of exiting
@@ -642,7 +652,9 @@ void keycache_put(const char *fh, const char *keyphrase) {
 }
 
 void fetchKeyphrase() {
+#ifdef POSIX
   struct termios ios0, ios1;
+#endif
   time_t time_ = time(NULL);
   char *date = malloc(9);
   strftime(date, 9, "%Y%m%d", gmtime(&time_));
@@ -664,6 +676,7 @@ void fetchKeyphrase() {
     if (!interactive) ERROR("Password not specified");
     password = malloc(51);
     fputs("Enter your password: ", stderr);
+#ifdef POSIX
     tcgetattr(0, &ios0);
     ios1 = ios0;
     ios1.c_lflag &= ~ECHO;
@@ -673,6 +686,11 @@ void fetchKeyphrase() {
       ERROR("Password invalid");
     }
     tcsetattr(0, TCSAFLUSH, &ios0);
+#else
+    if (scanf("%50s", password) < 1) {
+      ERROR("Password invalid");
+    }
+#endif
     while (getchar() != '\n');
     fputc('\n', stderr);
   }
@@ -853,7 +871,7 @@ void decryptFile() {
     fd = 1;
   }
   else
-    fd = open(destfilename, O_WRONLY|O_CREAT|O_EXCL, CREAT_MODE);
+    fd = open(destfilename, O_WRONLY|O_CREAT|O_EXCL, 0666);
   if (fd < 0 && errno == EEXIST) {
     if (stat(destfilename, &st) != 0 || S_ISREG(st.st_mode)) {
       if (!interactive) ERROR("Destination file exists: %s", destfilename);
@@ -920,10 +938,10 @@ void decryptFile() {
         memset(progressbar, ' ', 40);
         memset(progressbar, '=', (position*40)/length);
         progressbar[40] = 0;
-        fprintf(stderr, "[%s] %3lli%% %c\r", progressbar, (position*100)/length,
-          rotatingFoo[blocknum++ % 4]);
+        fprintf(stderr, "[%s] %3i%% %c\r", progressbar,
+            (int)((position*100)/length), rotatingFoo[blocknum++ % 4]);
       } else {
-        fprintf(stderr, "gui> %3lli\n", (position*100)/length);
+        fprintf(stderr, "gui> %3i\n", (int)((position*100)/length));
       }
       fflush(stderr);
     }
@@ -1028,6 +1046,17 @@ int main(int argc, char *argv[]) {
   
   filename = argv[optind];
   
+  if (verbosity >= VERB_DEBUG) {
+    fputs("compile time information:"
+#ifdef POSIX
+        " POSIX." ITOA(_POSIX_VERSION)
+#endif
+#ifdef __linux__
+        " Linux"
+#endif
+        "\n", stderr);
+  }
+
   if (!isatty(0)) interactive = 0;
   openFile();
   keycache_open();
@@ -1049,10 +1078,12 @@ int main(int argc, char *argv[]) {
           fetchKeyphrase();
       }
       
-      errno = 0;
-      nice(10);
-      if (errno == 0 && verbosity >= VERB_DEBUG)
-        fputs("NICE was set to 10\n", stderr);
+      #ifdef POSIX
+        errno = 0;
+        nice(10);
+        if (errno == 0 && verbosity >= VERB_DEBUG)
+          fputs("NICE was set to 10\n", stderr);
+      #endif
       
       // Set IONICE using the Linux-specific ioprio_set system call
       // If this causes problems, just delete the ionice-stuff
